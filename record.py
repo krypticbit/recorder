@@ -11,6 +11,9 @@ import pygame
 sampling_rate = 44100
 chunk_size = 1024
 
+screen_size = 500
+padding = 50
+
 paragraphs = []
 with open("data.txt", "r") as f:
     data = f.read()
@@ -21,7 +24,7 @@ audio = pyaudio.PyAudio()
 name = input("Enter your first name: ")
 
 pygame.init()
-screen = pygame.display.set_mode((500, 500))
+screen = pygame.display.set_mode((screen_size, screen_size))
 font = pygame.freetype.Font(None, 16)
 font.origin = True
 
@@ -35,7 +38,7 @@ stream = audio.open(
 stream.stop_stream()
 
 def line_breaks(text):
-    max_width = 450
+    max_width = screen_size - padding * 2
     words = text.split(" ")
     lines = []
     current_line = []
@@ -53,7 +56,7 @@ def line_breaks(text):
     lines.append(" ".join(current_line))
     return lines
 
-def render_line(line, color_at = -1):
+def render_line(line, color_at):
     line_rect = font.get_rect(line)
     line_metrics = font.get_metrics(line)
     line_surface = pygame.Surface(line_rect.size)
@@ -61,7 +64,17 @@ def render_line(line, color_at = -1):
 
     x = 0
     for i, (letter, metric) in enumerate(zip(line, line_metrics)):
-        font.render_to(line_surface, (x, line_rect.y), letter, (0, 0, 0) if i != color_at else (0, 160, 160))
+        if i == color_at:
+            pygame.draw.rect(
+                line_surface,
+                (180, 180, 180),
+                pygame.Rect(x, 0, metric[4], line_rect.height)
+            )
+        font.render_to(
+            line_surface,
+            (x, line_rect.y),
+            letter
+        )
         x += metric[4]
 
     return line_surface
@@ -94,31 +107,29 @@ def mainloop(prefix, name):
         events = []
         pressed = {}
 
-        remaining = list(p)
+        lines = line_breaks(p)
+        text = "".join(lines)
+        remaining = list(text)
         while len(remaining) > 0:
 
             line_surfaces = []
-            to_type = len(p) - len(remaining)
-            for l in line_breaks(p):
-                if len(l) <= to_type:
-                    line_surfaces.append(render_line(l))
-                elif to_type >= 0:
-                    line_surfaces.append(render_line(l, to_type))
+            to_type = len(text) - len(remaining)
+
+            for l in lines:
+                line_surfaces.append(render_line(l, to_type))
                 to_type -= len(l)
             
-            line_height = max(s.get_height() for s in line_surfaces)
-            x = 25
-            y = 25
-
+            line_height = max([l.get_rect().height for l in line_surfaces]) + 4
+            y = padding
             screen.fill((240, 240, 240))
             for l in line_surfaces:
-                screen.blit(l, (x, y))
+                screen.blit(l, (padding, y))
                 y += line_height
             pygame.display.flip()
 
             loop = True
             while loop:
-                frames.append(stream.read(chunk_size))
+                frames.append(stream.read(stream.get_read_available()))
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         stream.close()
@@ -126,12 +137,12 @@ def mainloop(prefix, name):
                         return
                     elif event.type == pygame.KEYDOWN:
                         delta_time = (datetime.now() - start_time)
-                        events.append(["keydown", delta_time.total_seconds(), event.key])
+                        events.append(["keydown", delta_time.total_seconds(), event.key, event.unicode])
                         pressed[event.key] = True
                         loop = False
                     elif event.type == pygame.KEYUP:
                         delta_time = (datetime.now() - start_time)
-                        events.append(["keyup", delta_time.total_seconds(), event.key])
+                        events.append(["keyup", delta_time.total_seconds(), event.key, event.unicode])
                         if event.key in pressed:
                             if event.unicode == remaining[0]:
                                 loop = False
