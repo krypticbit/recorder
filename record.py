@@ -11,7 +11,7 @@ import pygame
 sampling_rate = 44100
 chunk_size = 1024
 
-screen_size = 500
+screen_size = 800
 padding = 50
 
 paragraphs = []
