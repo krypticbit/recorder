@@ -57,9 +57,11 @@ def line_breaks(text):
     return lines
 
 def render_line(line, color_at):
+    offset = 2
+
     line_rect = font.get_rect(line)
     line_metrics = font.get_metrics(line)
-    line_surface = pygame.Surface(line_rect.size)
+    line_surface = pygame.Surface(line_rect.inflate(offset * 2, offset * 2).size)
     line_surface.fill((240, 240, 240))
 
     x = 0
@@ -68,11 +70,11 @@ def render_line(line, color_at):
             pygame.draw.rect(
                 line_surface,
                 (180, 180, 180),
-                pygame.Rect(x, 0, metric[4], line_rect.height)
+                pygame.Rect(x, 0, metric[4] + offset * 2, line_rect.height + offset * 2)
             )
         font.render_to(
             line_surface,
-            (x, line_rect.y),
+            (x + offset, line_rect.y + offset),
             letter
         )
         x += metric[4]
@@ -119,7 +121,7 @@ def mainloop(prefix, name):
                 line_surfaces.append(render_line(l, to_type))
                 to_type -= len(l)
             
-            line_height = max([l.get_rect().height for l in line_surfaces]) + 4
+            line_height = max([l.get_rect().height for l in line_surfaces])
             y = padding
             screen.fill((240, 240, 240))
             for l in line_surfaces:
