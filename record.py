@@ -59,13 +59,14 @@ class Recorder(threading.Thread):
     def run(self) -> None:
         while self._do_run:
             if self._stream is not None and self._recording.is_set():
-                while self._recording.is_set():
-                    if self._stream is not None:
-                        self._data += self._stream.read(self.chunk_size)
+                while self._do_run and self._recording.is_set():
+                    self._data += self._stream.read(self.chunk_size)
+                self._stream.stop_stream()
             self._recording.wait(timeout=0.1)
         if self._stream is not None:
             self._stream.close()
-            
+        print("exited")
+
 
 paragraphs = []
 with open("data.txt", "r") as f:
@@ -77,7 +78,6 @@ name = input("Enter your first name: ")
 pygame.init()
 screen = pygame.display.set_mode((screen_size, screen_size))
 font = pygame.freetype.Font(None, 16) # type: ignore
-font.origin = True
 
 sound_recorder = Recorder()
 
@@ -139,42 +139,36 @@ def mainloop(prefix, name):
     while not ready:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
                 return
             elif event.type == pygame.KEYUP:
                 ready = True
+
+    time.sleep(1)
                 
     for p in paragraphs:
         start_time = datetime.now()
-        frames = b""
         events = []
         pressed = {}
 
+        screen.fill((240, 240, 240))
+
         lines = line_breaks(p)
-        text = "".join(lines)
-        remaining = list(text)
+        line_height = 20
+        line_metrics = [font.get_metrics(l) for l in lines]
+
+        for i, l in enumerate(lines):
+            x = padding
+            y = padding + i * line_height
+            font.render_to(screen, (x, y), l)
 
         sound_recorder.start_recording()
+        pygame.display.flip()
 
-        while len(text) - len(remaining) < 20:
-
-            line_surfaces = []
-            to_type = len(text) - len(remaining)
-
-            for l in lines:
-                line_surfaces.append(render_line(l, to_type))
-                to_type -= len(l)
-            
-            line_height = max([l.get_rect().height for l in line_surfaces])
-            y = padding
-            screen.fill((240, 240, 240))
-            for l in line_surfaces:
-                screen.blit(l, (padding, y))
-                y += line_height
-            pygame.display.flip()
-
-            loop = True
-            while loop:
+        for line_index, line in enumerate(lines):
+            metrics = line_metrics[line_index]
+            character_index = 0
+            while character_index < len(line):
+                character = line[character_index]
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         return
@@ -182,14 +176,25 @@ def mainloop(prefix, name):
                         delta_time = (datetime.now() - start_time)
                         events.append(["keydown", delta_time.total_seconds(), event.key, event.unicode])
                         pressed[event.key] = True
-                        loop = False
                     elif event.type == pygame.KEYUP:
                         delta_time = (datetime.now() - start_time)
                         events.append(["keyup", delta_time.total_seconds(), event.key, event.unicode])
                         if event.key in pressed:
-                            if event.unicode == remaining[0]:
-                                loop = False
-                                remaining = remaining[1:]
+                            if event.unicode == character:
+                                r = pygame.Rect(
+                                    padding + sum(metrics[i][4] for i in range(character_index)),
+                                    padding + line_index * line_height,
+                                    metrics[character_index][4],
+                                    line_height
+                                )
+                                pygame.draw.rect(
+                                    screen,
+                                    (180, 180, 180),
+                                    r
+                                )
+                                pygame.display.update(r)
+                                character_index += 1
+
                             del pressed[event.key]
                         else:
                             print("WARNING: keyup without keydown, skipping event")
@@ -225,7 +230,6 @@ with open(prefix_path, "w") as f:
 mainloop(prefix, name)
 
 sound_recorder.exit()
-sound_recorder.join()
 print("done")
 pygame.quit()
 audio.terminate()
