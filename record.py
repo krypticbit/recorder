@@ -12,7 +12,7 @@ import time
 # use whisper
 # hugging face
 
-screen_size = 800
+screen_size = 500
 padding = 50
 
 audio = pyaudio.PyAudio()
@@ -26,23 +26,23 @@ class Recorder(threading.Thread):
         super().__init__()
         self._do_run = True
         self._recording = threading.Event()
-        self._stream: pyaudio.Stream | None = None
         self._start_time: datetime | None = None
         self._data = b""
+        self._stream = audio.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=self.sampling_rate,
+            input=True,
+            output=False,
+            start=False,
+
+            frames_per_buffer=self.chunk_size
+        )
         self.start()
 
     def start_recording(self) -> None:
         self._data = b""
-        if self._stream is None:
-            self._stream = audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=self.sampling_rate,
-                input=True,
-                frames_per_buffer=self.chunk_size
-            )
-        else:
-            self._stream.start_stream()
+        self._stream.start_stream()
         self._start_time = datetime.now()
         self._recording.set()
 
@@ -146,7 +146,6 @@ def mainloop(prefix, name):
     time.sleep(1)
                 
     for p in paragraphs:
-        start_time = datetime.now()
         events = []
         pressed = {}
 
@@ -161,8 +160,9 @@ def mainloop(prefix, name):
             y = padding + i * line_height
             font.render_to(screen, (x, y), l)
 
-        sound_recorder.start_recording()
         pygame.display.flip()
+
+        sound_recorder.start_recording()
 
         for line_index, line in enumerate(lines):
             metrics = line_metrics[line_index]
@@ -173,12 +173,10 @@ def mainloop(prefix, name):
                     if event.type == pygame.QUIT:
                         return
                     elif event.type == pygame.KEYDOWN:
-                        delta_time = (datetime.now() - start_time)
-                        events.append(["keydown", delta_time.total_seconds(), event.key, event.unicode])
+                        events.append(["keydown", datetime.now().timestamp(), event.key, event.unicode])
                         pressed[event.key] = True
                     elif event.type == pygame.KEYUP:
-                        delta_time = (datetime.now() - start_time)
-                        events.append(["keyup", delta_time.total_seconds(), event.key, event.unicode])
+                        events.append(["keyup", datetime.now().timestamp(), event.key, event.unicode])
                         if event.key in pressed:
                             if event.unicode == character:
                                 r = pygame.Rect(
@@ -215,7 +213,6 @@ def mainloop(prefix, name):
         with open(f"data/events_{name}_{paragraphs.index(p)}_{prefix}.json", "w") as f:
             json.dump({
                 "stream_start": stream_start_time.timestamp(),
-                "key_start": start_time.timestamp(),
                 "events": events
             }, f)
 
