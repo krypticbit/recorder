@@ -65,6 +65,7 @@ class Recorder(threading.Thread):
             self._recording.wait(timeout=0.1)
         if self._stream is not None:
             self._stream.close()
+            
 
 paragraphs = []
 with open("data.txt", "r") as f:
