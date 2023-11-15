@@ -1,41 +1,84 @@
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from datetime import datetime
+import threading
+from typing import Any
 import pyaudio
 import wave
 import json
 import pygame
+import time
 
 # use whisper
 # hugging face
 
-sampling_rate = 44100
-chunk_size = 1024
-
 screen_size = 800
 padding = 50
+
+audio = pyaudio.PyAudio()
+
+class Recorder(threading.Thread):
+
+    sampling_rate = 44100
+    chunk_size = 1024
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._do_run = True
+        self._recording = threading.Event()
+        self._stream: pyaudio.Stream | None = None
+        self._start_time: datetime | None = None
+        self._data = b""
+        self.start()
+
+    def start_recording(self) -> None:
+        self._data = b""
+        if self._stream is None:
+            self._stream = audio.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=self.sampling_rate,
+                input=True,
+                frames_per_buffer=self.chunk_size
+            )
+        else:
+            self._stream.start_stream()
+        self._start_time = datetime.now()
+        self._recording.set()
+
+    def stop_recording(self) -> tuple[bytes, datetime]:
+        assert self._stream is not None
+        assert self._start_time is not None
+        self._recording.clear()
+        return self._data, self._start_time
+    
+    def exit(self) -> None:
+        self._do_run = False
+        self.join()
+
+    def run(self) -> None:
+        while self._do_run:
+            if self._stream is not None and self._recording.is_set():
+                while self._recording.is_set():
+                    if self._stream is not None:
+                        self._data += self._stream.read(self.chunk_size)
+            self._recording.wait(timeout=0.1)
+        if self._stream is not None:
+            self._stream.close()
 
 paragraphs = []
 with open("data.txt", "r") as f:
     data = f.read()
 paragraphs = data.split("\n\n")
 
-audio = pyaudio.PyAudio()
-
 name = input("Enter your first name: ")
 
 pygame.init()
 screen = pygame.display.set_mode((screen_size, screen_size))
-font = pygame.freetype.Font(None, 16)
+font = pygame.freetype.Font(None, 16) # type: ignore
 font.origin = True
 
-stream = audio.open(
-    format=pyaudio.paInt16,
-    channels=1,
-    rate=sampling_rate,
-    input=True,
-    frames_per_buffer=chunk_size
-)
-stream.stop_stream()
+sound_recorder = Recorder()
 
 def line_breaks(text):
     max_width = screen_size - padding * 2
@@ -89,30 +132,30 @@ def mainloop(prefix, name):
     screen.fill((240, 240, 240))
     screen.blit(s, r)
     pygame.display.flip()
+    pygame.event.set_allowed([pygame.KEYDOWN, pygame.KEYUP, pygame.QUIT])
 
     ready = False
     while not ready:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                stream.close()
                 pygame.quit()
                 return
             elif event.type == pygame.KEYUP:
                 ready = True
                 
-
     for p in paragraphs:
-
-        stream.start_stream()
         start_time = datetime.now()
-        frames = []
+        frames = b""
         events = []
         pressed = {}
 
         lines = line_breaks(p)
         text = "".join(lines)
         remaining = list(text)
-        while len(remaining) > 0:
+
+        sound_recorder.start_recording()
+
+        while len(text) - len(remaining) < 20:
 
             line_surfaces = []
             to_type = len(text) - len(remaining)
@@ -131,11 +174,8 @@ def mainloop(prefix, name):
 
             loop = True
             while loop:
-                frames.append(stream.read(stream.get_read_available()))
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        stream.close()
-                        pygame.quit()
                         return
                     elif event.type == pygame.KEYDOWN:
                         delta_time = (datetime.now() - start_time)
@@ -156,20 +196,22 @@ def mainloop(prefix, name):
         screen.fill((240, 240, 240))
         pygame.display.flip()
 
-        for _ in range(int(sampling_rate / chunk_size * 0.5)): # 0.5 second buffer at the end
-            frames.append(stream.read(chunk_size))
-
-        stream.stop_stream()
+        time.sleep(0.5)
+        data, stream_start_time = sound_recorder.stop_recording()
 
         wf = wave.open(f"data/recording_{name}_{paragraphs.index(p)}_{prefix}.wav", "wb")
         wf.setnchannels(1)
         wf.setsampwidth(audio.get_sample_size(pyaudio.paInt16))
-        wf.setframerate(sampling_rate)
-        wf.writeframes(b"".join(frames))
+        wf.setframerate(sound_recorder.sampling_rate)
+        wf.writeframes(data)
         wf.close()
 
         with open(f"data/events_{name}_{paragraphs.index(p)}_{prefix}.json", "w") as f:
-            json.dump(events, f, indent=4)
+            json.dump({
+                "stream_start": stream_start_time.timestamp(),
+                "key_start": start_time.timestamp(),
+                "events": events
+            }, f)
 
 prefix_path = Path("prefix.txt")
 prefix = 0
@@ -181,5 +223,8 @@ with open(prefix_path, "w") as f:
 
 mainloop(prefix, name)
 
+sound_recorder.exit()
+sound_recorder.join()
+print("done")
 pygame.quit()
 audio.terminate()

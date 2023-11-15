@@ -1,4 +1,5 @@
 .DS_Store
 .venv
-data
+data-old
+data/*
 prefix.txt
